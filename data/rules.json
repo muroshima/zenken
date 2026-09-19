@@ -1,0 +1,40 @@
+{
+  "_comment": "経費規程。実在の企業のものではなく、この作品のために書いた架空の規程。",
+  "categories": {
+    "交通費": {
+      "receipt_required_from": 0,
+      "notes": "公共交通機関の実費。タクシーは taxi ルールに従う"
+    },
+    "会議費": {
+      "per_person_limit": 3000,
+      "receipt_required_from": 5000,
+      "notes": "社内および取引先との打ち合わせに伴う飲食"
+    },
+    "接待交際費": {
+      "per_person_limit": 10000,
+      "receipt_required_from": 5000,
+      "requires_attendees": true,
+      "notes": "参加者の氏名と所属の記載が必須"
+    },
+    "消耗品費": {
+      "preapproval_required_from": 30000,
+      "receipt_required_from": 5000
+    },
+    "書籍研修費": {
+      "monthly_limit_per_person": 20000,
+      "receipt_required_from": 5000
+    },
+    "通信費": {
+      "receipt_required_from": 5000
+    }
+  },
+  "taxi": {
+    "allowed_after_hour": 22,
+    "allowed_before_hour": 5,
+    "notes": "22時以降または5時以前の利用のみ。それ以外は事前承認が必要"
+  },
+  "general": {
+    "submission_deadline_days": 30,
+    "notes": "利用日から30日以内に申請すること。利用日が申請日より後の申請は受理しない"
+  }
+}
