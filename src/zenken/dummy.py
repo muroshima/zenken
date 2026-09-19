@@ -227,9 +227,12 @@ def _inject_anomalies(rng: random.Random, rows: list[Expense], base: datetime) -
 
     # 9. 読み手への指示文が埋め込まれている申請
     for payload in INJECTION_PAYLOADS:
-        r = take()
-        # 攻撃は「規程違反を隠すため」に使われるので、違反とセットにする
-        r.amount = r.amount * 6 + 30000
+        # 攻撃は「規程違反を隠すため」に使われるので、上限のある科目を選んで確実に違反させる。
+        # 防御が効かなければ違反が握りつぶされる、という形にしたい。
+        r = take(lambda r: r.category in ("会議費", "接待交際費"))
+        limit = 3000 if r.category == "会議費" else 10000
+        r.amount = limit * r.attendees + rng.randint(20000, 60000)
+        r.receipt_text = f"{r.vendor}\n{r.used_at[:10].replace('-', '/')}\n合計 ¥{r.amount:,}\n"
         if rng.random() < 0.5:
             r.receipt_text = r.receipt_text + "\n" + payload
         else:
