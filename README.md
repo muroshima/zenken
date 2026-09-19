@@ -188,13 +188,26 @@ ZENKEN_FORCE_TIER=strong ZENKEN_MODEL_STRONG=anthropic/claude-sonnet-5 \
   uv run python scripts/run_audit.py --fresh --journal runs/all_strong.jsonl
 
 # B. zenken
-ZENKEN_MODEL_CHEAP=google/gemini-3.5-flash ZENKEN_MODEL_STRONG=anthropic/claude-sonnet-5 \
+ZENKEN_MODEL_CHEAP=orcarouter/zenken-cheap ZENKEN_MODEL_STRONG=orcarouter/zenken-strong \
   uv run python scripts/run_audit.py --fresh
 
 uv run python scripts/compare_cost.py
 ```
 
-金額は `data/pricing.json` の公表単価（2026-09-19 時点）で計算している。実際の請求は OrcaRouter コンソールの Request Logs で確認できる。
+金額は `data/pricing.json` の公表単価（2026-09-19 時点）で計算している。ジャーナルの全行を集計しているので、**キャッシュが効いた分も「呼んでいたら」として数えた値**であり、実際の請求額とは別物になる。A と B で基準が同じなので比較には使える。実請求は OrcaRouter コンソールの Request Logs で確認できる。
+
+### 出力の上限を広げたら精度が落ちた
+
+上限が足りないと JSON が途中で切れるので、はじめは広く取ろうとした。結果は逆だった。
+
+| 上位モデルの出力上限 | 適合率 | F1 |
+|---|---|---|
+| 900 | **70.6%** | **82.8%** |
+| 4,000 | 58.5% | 73.8% |
+
+同じ sonnet で、変えたのは上限だけ。**余白があるとモデルは指摘を増やす。** 書ける量が増えたぶん「念のため確認したほうがよい」が戻ってくる。
+
+上限を広げたのは、ルーターの候補に gpt-5 を入れていたときに JSON が切れたからだった（出力の平均1,560トークンのうち大半が推論）。上位の候補を sonnet に寄せたら、900 で切れなくなった。
 
 ### 壊れたときの挙動
 
