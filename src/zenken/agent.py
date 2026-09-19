@@ -44,7 +44,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .llm import LLM
+from .llm import LLM, BudgetExceeded
 from .orca import FREE_MODEL
 from .sanitize import as_quoted_data, sanitize_expense
 from .tools import (
@@ -381,6 +381,10 @@ class AuditAgent:
             assessment = str(parsed.get("assessment", ""))[:400]
             confidence = float(parsed.get("confidence", 0.5))
             error = None
+        except BudgetExceeded:
+            # 上限に達したときだけは握りつぶさない。ここで捕まえてしまうと
+            # 「失敗したので人に渡す」を延々と繰り返し、止めるための上限が意味を失う。
+            raise
         except Exception as e:  # noqa: BLE001 — 落とさず人に渡す
             # モデルが落ちても処理は止めない。判断できなかったものは人に回す。
             model_findings = []

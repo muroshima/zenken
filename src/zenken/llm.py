@@ -46,9 +46,23 @@ class Ledger:
 
     _lock: Any = field(default_factory=threading.Lock, repr=False)
 
+    failures: int = 0
+
     def record(self, model: str, usage: dict[str, Any] | None) -> None:
         with self._lock:
             self._record(model, usage)
+
+    def record_failure(self, model: str) -> None:
+        """失敗した呼び出しも回数に数える。
+
+        数えないと、上流が落ちている間の呼び出しが上限に反映されず、
+        失敗し続けるかぎり永久に止まらない。実際にこれで止まらなくなった。
+        """
+        with self._lock:
+            self.failures += 1
+            self.calls += 1
+            m = self.by_model.setdefault(model, {"calls": 0, "prompt": 0, "completion": 0})
+            m["calls"] += 1
 
     def _record(self, model: str, usage: dict[str, Any] | None) -> None:
         self.calls += 1
@@ -62,8 +76,9 @@ class Ledger:
         m["completion"] += c
 
     def summary(self) -> str:
+        failed = f"・失敗 {self.failures} 回" if self.failures else ""
         lines = [
-            f"呼び出し {self.calls} 回（キャッシュ命中 {self.cache_hits} 回）/ "
+            f"呼び出し {self.calls} 回（キャッシュ命中 {self.cache_hits} 回{failed}）/ "
             f"入力 {self.prompt_tokens:,} トークン・出力 {self.completion_tokens:,} トークン"
         ]
         for model, m in sorted(self.by_model.items(), key=lambda kv: -kv[1]["calls"]):
@@ -153,7 +168,11 @@ class LLM:
         self.budget.check(self.ledger)
 
         started = time.monotonic()
-        res = self.client.chat.completions.create(**request)
+        try:
+            res = self.client.chat.completions.create(**request)
+        except Exception:
+            self.ledger.record_failure(model)
+            raise
         elapsed = time.monotonic() - started
 
         usage = res.usage.model_dump() if res.usage else {}

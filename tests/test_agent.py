@@ -296,3 +296,44 @@ class Testコストの上限:
         llm = LLM(budget=Budget(max_calls=0, max_tokens=100), use_cache=False)
         with pytest.raises(BudgetExceeded):
             llm.complete([{"role": "user", "content": "x"}])
+
+    def test_失敗した呼び出しも回数に数える(self):
+        """数えないと、上流が落ちている間は上限に届かず、失敗し続けるかぎり止まらない。"""
+        from zenken.llm import LLM, Budget, BudgetExceeded
+
+        llm = LLM(budget=Budget(max_calls=3, max_tokens=1_000_000), use_cache=False)
+
+        class Boom:
+            class chat:  # noqa: N801
+                class completions:  # noqa: N801
+                    @staticmethod
+                    def create(**_):
+                        raise RuntimeError("upstream down")
+
+        llm._client = Boom()
+
+        attempts = 0
+        stopped = False
+        for _ in range(50):
+            attempts += 1
+            try:
+                llm.complete([{"role": "user", "content": "x"}])
+            except BudgetExceeded:
+                stopped = True
+                break
+            except RuntimeError:
+                continue  # 上流のエラーは呼び出し側が握りつぶす想定
+
+        assert stopped, "上限に達しても止まらなかった"
+        assert attempts <= 4, f"{attempts}回試行した。上限が効いていない"
+        assert llm.ledger.failures >= 1
+
+    def test_上限超過はエージェントの内側で握りつぶされない(self):
+        """audit の except Exception が上限超過まで飲み込むと、上限が意味を失う。"""
+        from zenken.llm import LLM, Budget, BudgetExceeded
+
+        llm = LLM(budget=Budget(max_calls=0, max_tokens=1_000_000), use_cache=False)
+        agent = AuditAgent(llm)
+
+        with pytest.raises(BudgetExceeded):
+            agent.audit(expense(amount=30000, attendees=2), [])
