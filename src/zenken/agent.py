@@ -65,9 +65,10 @@ MODEL_STRONG = os.environ.get("ZENKEN_MODEL_STRONG", FREE_MODEL)
 REVIEW_AMOUNT_THRESHOLD = int(os.environ.get("ZENKEN_REVIEW_THRESHOLD", "50000"))
 
 # 出力に許す上限。推論するモデルは答えを書く前に大量のトークンを使う。
-# gpt-5 に振られたとき、761 トークンのうち 704 が推論だった（実測）。
-# 上限が足りないと JSON が途中で切れ、パースに失敗して人に回ることになる。
-MAX_TOKENS = {"cheap": 900, "strong": 2500}
+# 188件を gpt-5 で通したとき、出力の平均は 1,560 トークンで、うち大半が推論だった。
+# 上限 2,500 では材料の多い申請で JSON が途中で切れ、10件がパースに失敗した。
+# 推論の長さはこちらから制御できないので、上限の側に余裕を持たせる。
+MAX_TOKENS = {"cheap": 900, "strong": 4000}
 
 # ルーティングを無効にして全件を同じ階層で処理する。コストの比較対象を取るために使う。
 # 通常の実行では空のままにする。
