@@ -53,10 +53,20 @@ def tally(rows: list[dict], pricing: dict) -> dict:
         m["prompt"] += int(detail.get("prompt_tokens", 0))
         m["completion"] += int(detail.get("completion_tokens", 0))
 
+    def rate_for(model: str) -> dict | None:
+        """OrcaRouter が返すモデル名には提供元の接頭辞が付かないので、末尾で突き合わせる。"""
+        table = pricing.get("models", {})
+        if model in table:
+            return table[model]
+        for key, value in table.items():
+            if key.split("/")[-1] == model.split("/")[-1]:
+                return value
+        return None
+
     total_cost = 0.0
     priced = True
     for model, m in per_model.items():
-        rate = pricing.get("models", {}).get(model)
+        rate = rate_for(model)
         if not rate:
             priced = False
             continue
