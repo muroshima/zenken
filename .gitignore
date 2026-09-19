@@ -1,0 +1,20 @@
+# 認証情報は Keychain だけを正とする。ここに置くことはない
+.env
+.env.*
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# LLM レスポンスキャッシュ（開発時のクレジット節約用。成果物ではない）
+.cache/
+
+# 実行ジャーナル（実行ごとに変わる）
+runs/
+
+.DS_Store
