@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,7 +44,13 @@ class Ledger:
     def total_tokens(self) -> int:
         return self.prompt_tokens + self.completion_tokens
 
+    _lock: Any = field(default_factory=threading.Lock, repr=False)
+
     def record(self, model: str, usage: dict[str, Any] | None) -> None:
+        with self._lock:
+            self._record(model, usage)
+
+    def _record(self, model: str, usage: dict[str, Any] | None) -> None:
         self.calls += 1
         p = int((usage or {}).get("prompt_tokens", 0))
         c = int((usage or {}).get("completion_tokens", 0))

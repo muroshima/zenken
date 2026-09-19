@@ -143,24 +143,92 @@ class Test根拠のない指摘は採用しない:
 
         assert "unusual_pattern" not in {f["code"] for f in v.findings}
 
-    def test_根拠のある指摘は採用する(self):
+    def test_根拠があり裏も取れる指摘は採用する(self):
         llm = FakeLLM(
             reply(
                 findings=[
                     {
                         "code": "vendor_alias_duplicate",
                         "detail": "同じ店への二重申請",
-                        "evidence": "EXP-0042 が同額・同日で Cafe Lumiere",
+                        "evidence": "EXP-0042 が同額で Cafe Lumiere",
                     }
                 ]
             )
         )
         agent = AuditAgent(llm)
+        past = expense(id="EXP-0042", amount=80000, vendor="Cafe Lumiere")
 
-        v = agent.audit(expense(amount=80000, attendees=3), [])
+        v = agent.audit(expense(amount=80000, attendees=3), [past])
 
         assert "vendor_alias_duplicate" in {f["code"] for f in v.findings}
         assert v.decision == "escalate"
+
+
+class Test計算で裏が取れない指摘は採用しない:
+    """モデルは材料が並んでいるだけで関連を言いたがる。計算で否定できるものは否定する。"""
+
+    def test_合算しても承認が要らない額なら分割とみなさない(self):
+        # 会議費には事前承認の閾値が無いので、分割して避ける対象が存在しない
+        llm = FakeLLM(
+            reply(
+                findings=[
+                    {
+                        "code": "split_to_evade",
+                        "detail": "承認を避けるために分けている",
+                        "evidence": "EXP-0042 が同科目で翌日",
+                    }
+                ]
+            )
+        )
+        agent = AuditAgent(llm)
+        past = expense(id="EXP-0042", amount=4000, used_at="2026-09-11T19:00:00")
+
+        v = agent.audit(expense(amount=80000, attendees=3), [past])
+
+        assert "split_to_evade" not in {f["code"] for f in v.findings}
+
+    def test_合算が閾値を超えるなら分割として扱う(self):
+        # 消耗品費は30,000円以上で事前承認が要る。28,000 + 28,000 なら回避の動機がある
+        llm = FakeLLM(
+            reply(
+                findings=[
+                    {
+                        "code": "split_to_evade",
+                        "detail": "承認を避けるために分けている",
+                        "evidence": "EXP-0042 が同科目で翌日、合計 56,000 円",
+                    }
+                ]
+            )
+        )
+        agent = AuditAgent(llm)
+        past = expense(
+            id="EXP-0042", category="消耗品費", amount=28000, used_at="2026-09-11T19:00:00"
+        )
+
+        v = agent.audit(
+            expense(category="消耗品費", amount=28000, attendees=1), [past]
+        )
+
+        assert "split_to_evade" in {f["code"] for f in v.findings}
+
+    def test_金額も日付も合わないものを二重申請とみなさない(self):
+        llm = FakeLLM(
+            reply(
+                findings=[
+                    {
+                        "code": "vendor_alias_duplicate",
+                        "detail": "同じ店への二重申請",
+                        "evidence": "EXP-0042 が似た店名",
+                    }
+                ]
+            )
+        )
+        agent = AuditAgent(llm)
+        past = expense(id="EXP-0042", amount=1234, used_at="2026-09-01T19:00:00")
+
+        v = agent.audit(expense(amount=80000, attendees=3), [past])
+
+        assert "vendor_alias_duplicate" not in {f["code"] for f in v.findings}
 
 
 class Testモデルを呼ぶかどうかも判断する:

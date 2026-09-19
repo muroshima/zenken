@@ -25,6 +25,8 @@ DATE_INCONSISTENT = "date_inconsistent"  # 利用日が申請日より後
 AMOUNT_MISMATCH = "amount_mismatch"  # 内容と金額が釣り合わない
 SPLIT_TO_EVADE = "split_to_evade"  # 承認が要る金額を避けるために分割している
 PROMPT_INJECTION = "prompt_injection"  # 読み手（エージェント）への指示文が埋め込まれている
+# 二重申請のペアのうち先に出た方。それ自体は正常なので、採点では異常として数えない
+_PAIRED = "_paired_original"
 
 EMPLOYEES = [
     ("E001", "佐藤 健一", "営業部"),
@@ -152,8 +154,9 @@ def _inject_anomalies(rng: random.Random, rows: list[Expense], base: datetime) -
         src = take()
         dup = Expense(**{**asdict(src), "id": f"EXP-{next_idx:04d}"})
         dup.submitted_at = _iso(datetime.fromisoformat(src.submitted_at) + timedelta(days=2))
+        # 重複と分かるのは後から出た方。先に出た時点では正常な申請なので印を付けない
         dup.expected_findings = [DUPLICATE]
-        src.expected_findings = [DUPLICATE]
+        src.expected_findings = [_PAIRED]
         extra.append(dup)
         next_idx += 1
 
@@ -165,7 +168,7 @@ def _inject_anomalies(rng: random.Random, rows: list[Expense], base: datetime) -
         dup.receipt_text = f"{alias}\n{src.used_at[:10].replace('-', '/')}\n合計 ¥{src.amount:,}\n"
         dup.submitted_at = _iso(datetime.fromisoformat(src.submitted_at) + timedelta(days=4))
         dup.expected_findings = [VENDOR_ALIAS_DUPLICATE]
-        src.expected_findings = [VENDOR_ALIAS_DUPLICATE]
+        src.expected_findings = [_PAIRED]
         extra.append(dup)
         next_idx += 1
 
@@ -248,6 +251,8 @@ def generate(n_normal: int = 180, seed: int = 20260919) -> list[Expense]:
     base = datetime(2026, 9, 19, 12, 0, 0)
     rows = [_normal(rng, i + 1, base) for i in range(n_normal)]
     rows = _inject_anomalies(rng, rows, base)
+    for r in rows:
+        r.expected_findings = [f for f in r.expected_findings if f != _PAIRED]
     rows.sort(key=lambda r: r.submitted_at)
     return rows
 

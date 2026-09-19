@@ -32,6 +32,10 @@ def main() -> int:
     parser.add_argument("--journal", default="runs/audit.jsonl")
     parser.add_argument("--expenses", default="data/expenses.json")
     parser.add_argument("--max-calls", type=int, default=400)
+    parser.add_argument("--workers", type=int, default=4, help="同時に処理する件数")
+    parser.add_argument(
+        "--retry-failed", action="store_true", help="モデル呼び出しに失敗した申請だけやり直す"
+    )
     args = parser.parse_args()
 
     expenses = json.loads((ROOT / args.expenses).read_text(encoding="utf-8"))
@@ -42,6 +46,9 @@ def main() -> int:
     if args.fresh and journal_path.exists():
         journal_path.unlink()
     journal = Journal(journal_path)
+    if args.retry_failed:
+        removed = journal.drop_failed()
+        print(f"失敗していた {removed} 件をやり直します")
 
     llm = LLM(
         budget=Budget(max_calls=args.max_calls, max_tokens=4_000_000),
@@ -58,10 +65,12 @@ def main() -> int:
     def progress(i: int, total: int, v: Verdict) -> None:
         mark = "→人" if v.decision == "escalate" else "承認"
         codes = ",".join(sorted({f["code"] for f in v.findings})) or "-"
-        print(f"[{i:4}/{total}] {v.expense_id} {mark} tier={v.tier:6} {codes}")
+        print(f"[{i:4}/{total}] {v.expense_id} {mark} tier={v.tier:6} {codes}", flush=True)
 
     try:
-        agent.audit_all(expenses, journal, resume=not args.fresh, on_progress=progress)
+        agent.audit_all(
+            expenses, journal, resume=not args.fresh, on_progress=progress, workers=args.workers
+        )
     except KeyboardInterrupt:
         print("\n中断しました。同じコマンドで続きから再開できます。")
         return 130

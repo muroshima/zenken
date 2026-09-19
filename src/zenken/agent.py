@@ -38,6 +38,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -48,6 +50,7 @@ from .sanitize import as_quoted_data, sanitize_expense
 from .tools import (
     arithmetic_facts,
     check_rules,
+    find_amount_outlier,
     find_exact_duplicates,
     find_near_matches,
     load_rules,
@@ -60,6 +63,10 @@ MODEL_STRONG = os.environ.get("ZENKEN_MODEL_STRONG", FREE_MODEL)
 
 # これを超えたら、引っかかるものが無くても一応モデルに見せる
 REVIEW_AMOUNT_THRESHOLD = int(os.environ.get("ZENKEN_REVIEW_THRESHOLD", "50000"))
+
+# ルーティングを無効にして全件を同じ階層で処理する。コストの比較対象を取るために使う。
+# 通常の実行では空のままにする。
+FORCE_TIER = os.environ.get("ZENKEN_FORCE_TIER", "").strip()
 
 SYSTEM_PROMPT = """あなたは経費申請の監査を補助します。
 
@@ -106,6 +113,7 @@ class Verdict:
     tier: str = "none"  # モデルをどこまで使ったか: none / cheap / strong
     model: str | None = None
     tokens: int = 0
+    usage_detail: dict[str, int] = field(default_factory=dict)  # 入出力の内訳。コスト計算に使う
     cached: bool = False
     error: str | None = None
 
@@ -121,7 +129,12 @@ class Journal:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
-    def processed_ids(self) -> set[str]:
+    def processed_ids(self, *, include_failed: bool = True) -> set[str]:
+        """処理済みの申請 ID。
+
+        include_failed=False にすると、モデル呼び出しに失敗した申請を「未処理」として返す。
+        上流が落ちていた時間帯のぶんだけを、後からやり直すために使う。
+        """
         if not self.path.exists():
             return set()
         ids = set()
@@ -129,10 +142,24 @@ class Journal:
             if not line.strip():
                 continue
             try:
-                ids.add(json.loads(line)["expense_id"])
+                row = json.loads(line)
+                if not include_failed and row.get("error"):
+                    continue
+                ids.add(row["expense_id"])
             except (json.JSONDecodeError, KeyError):
                 continue  # 書き込み途中で落ちた行は捨てる
         return ids
+
+    def drop_failed(self) -> int:
+        """失敗した行をジャーナルから取り除く。やり直した結果で置き換えるため。"""
+        rows = self.read_all()
+        kept = [r for r in rows if not r.get("error")]
+        removed = len(rows) - len(kept)
+        if removed:
+            self.path.write_text(
+                "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in kept), encoding="utf-8"
+            )
+        return removed
 
     def append(self, verdict: Verdict) -> None:
         with self.path.open("a", encoding="utf-8") as f:
@@ -184,6 +211,8 @@ class AuditAgent:
         - cheap  違反はもう確定している。人向けの説明を書かせるだけ
         - strong 判断が要る。表記違いの重複、分割の疑い、攻撃を受けている
         """
+        if FORCE_TIER:
+            return FORCE_TIER  # 比較対象を取るときだけ通る
         if injections:
             return "strong"  # 攻撃されている申請は丁寧に見る
         if near:
@@ -252,11 +281,48 @@ class AuditAgent:
 
     # ------------------------------------------------------------ 監査
 
-    def audit(self, expense: dict[str, Any], history: list[dict[str, Any]]) -> Verdict:
+    def _verify_model_finding(
+        self, finding: dict[str, Any], expense: dict[str, Any], near: list[dict[str, Any]]
+    ) -> bool:
+        """モデルの指摘のうち、計算で裏が取れるものは取る。
+
+        根拠を書かせるだけでは足りなかった。モデルは「同じ科目で日が近い申請が並んでいる」
+        のを見ると、それだけで分割だと言いたがる。合算しても承認が要る金額に届かないなら、
+        分割して回避する動機がそもそも無い。
+        """
+        code = finding.get("code")
+
+        if code == "split_to_evade":
+            conf = self.rules["categories"].get(expense["category"], {})
+            threshold = conf.get("preapproval_required_from")
+            if not threshold:
+                return False  # 事前承認の閾値が無い科目では、回避する対象が存在しない
+            total = int(expense["amount"]) + sum(int(p["amount"]) for p in near)
+            return total >= threshold
+
+        if code == "vendor_alias_duplicate":
+            # 同じ支出を二度出しているなら、金額か利用日のどちらかは一致するはず
+            return any(
+                int(p["amount"]) == int(expense["amount"])
+                or p["used_at"][:10] == expense["used_at"][:10]
+                for p in near
+            )
+
+        return True
+
+    def audit(
+        self,
+        expense: dict[str, Any],
+        history: list[dict[str, Any]],
+        population: list[dict[str, Any]] | None = None,
+    ) -> Verdict:
         facts = arithmetic_facts(expense)
         rule_findings = [{**f, "source": "rule"} for f in check_rules(expense, self.rules)]
         exact_dups = find_exact_duplicates(expense, history)
         near = find_near_matches(expense, history)
+        outlier = find_amount_outlier(expense, population if population is not None else history)
+        if outlier:
+            rule_findings.append({**outlier, "source": "outlier"})
         safe, injections = sanitize_expense(expense)
 
         findings: list[dict[str, Any]] = list(rule_findings)
@@ -307,7 +373,10 @@ class AuditAgent:
             model_findings = [
                 {**f, "source": "model"}
                 for f in parsed.get("additional_findings", [])
-                if isinstance(f, dict) and f.get("code") and str(f.get("evidence", "")).strip()
+                if isinstance(f, dict)
+                and f.get("code")
+                and str(f.get("evidence", "")).strip()
+                and self._verify_model_finding(f, expense, near)
             ]
             assessment = str(parsed.get("assessment", ""))[:400]
             confidence = float(parsed.get("confidence", 0.5))
@@ -335,6 +404,10 @@ class AuditAgent:
             tier=tier,
             model=res.get("model"),
             tokens=int(usage.get("total_tokens", 0)),
+            usage_detail={
+                "prompt_tokens": int(usage.get("prompt_tokens", 0)),
+                "completion_tokens": int(usage.get("completion_tokens", 0)),
+            },
             cached=bool(res.get("cached")),
             error=error,
         )
@@ -346,18 +419,40 @@ class AuditAgent:
         *,
         resume: bool = True,
         on_progress=None,
+        workers: int = 4,
     ) -> list[Verdict]:
-        """全件を順に監査する。すでに処理した ID は飛ばす。"""
+        """全件を監査する。すでに処理した ID は飛ばす。
+
+        申請どうしは影響し合わない（過去照合の対象はその申請より前に出たものに限られ、
+        処理の順番では変わらない）ので、並べて処理してよい。
+        1件ずつ順に回すと待ち時間の合計がそのまま所要時間になる。
+        """
         done = journal.processed_ids() if resume else set()
+        todo = [e for e in expenses if e["id"] not in done]
+        if not todo:
+            return []
+
+        # 過去照合の対象は「その申請より前に出ているもの」。並列でも同じ結果になる
+        def history_for(expense: dict[str, Any]) -> list[dict[str, Any]]:
+            return [e for e in expenses if e["submitted_at"] < expense["submitted_at"]]
+
         results: list[Verdict] = []
-        for i, expense in enumerate(expenses, 1):
-            if expense["id"] in done:
-                continue
-            # 過去照合の対象は「その申請より前に出ているもの」に限る
-            history = [e for e in expenses if e["submitted_at"] < expense["submitted_at"]]
-            verdict = self.audit(expense, history)
-            journal.append(verdict)
-            results.append(verdict)
-            if on_progress:
-                on_progress(i, len(expenses), verdict)
+        write_lock = threading.Lock()
+        counter = {"n": 0}
+
+        def work(expense: dict[str, Any]) -> Verdict:
+            # 重複の判定は「前に出たもの」だけを見る。金額の分布は全件から取る
+            verdict = self.audit(expense, history_for(expense), population=expenses)
+            with write_lock:
+                journal.append(verdict)
+                results.append(verdict)
+                counter["n"] += 1
+                if on_progress:
+                    on_progress(counter["n"], len(todo), verdict)
+            return verdict
+
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            futures = [pool.submit(work, e) for e in todo]
+            for fut in as_completed(futures):
+                fut.result()  # 例外はここで上がる（上限超過など）
         return results

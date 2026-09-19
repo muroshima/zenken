@@ -23,10 +23,10 @@ CODE_ALIASES: dict[str, set[str]] = {
     "duplicate": {"duplicate"},
     "vendor_alias_duplicate": {"vendor_alias_duplicate", "duplicate"},
     "over_limit": {"over_limit", "preapproval_required"},
-    "digit_error": {"digit_error", "amount_mismatch", "unusual_pattern"},
+    "digit_error": {"digit_error", "amount_mismatch", "amount_outlier", "unusual_pattern"},
     "taxi_out_of_hours": {"taxi_out_of_hours"},
     "date_inconsistent": {"date_inconsistent"},
-    "amount_mismatch": {"amount_mismatch", "unusual_pattern"},
+    "amount_mismatch": {"amount_mismatch", "amount_outlier", "unusual_pattern"},
     "split_to_evade": {"split_to_evade", "preapproval_required"},
     "prompt_injection": {"prompt_injection"},
 }

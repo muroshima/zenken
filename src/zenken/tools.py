@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+import statistics
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -175,6 +176,41 @@ def find_near_matches(
             out.append({**past, "_days_apart": gap})
     out.sort(key=lambda r: (r["_days_apart"], -int(r["amount"])))
     return out[:limit]
+
+
+def find_amount_outlier(
+    expense: dict[str, Any],
+    history: list[dict[str, Any]],
+    *,
+    min_samples: int = 8,
+    ratio: float = 3.0,
+) -> dict[str, str] | None:
+    """同じ勘定科目の過去の金額と比べて、極端に外れていないかを見る。
+
+    1件だけ見れば「2,300円の交通費」は何も引っかからない。規程に上限も無い。
+    ところが同じ科目の過去の中央値が645円だと分かると、桁を間違えた申請に見えてくる。
+
+    この比較は、1件ずつ承認している限り誰にもできない。
+    **全件を持っていないと計算できない**ので、人の目視では原理的に見つからない類の異常になる。
+    """
+    amount = int(expense["amount"])
+    # 分布を見るのが目的なので、母集団は「その申請より前」に限らなくてよい。
+    # 重複の判定と違い、あとから出た申請を含めても意味が変わらない。
+    same_category = [
+        int(p["amount"])
+        for p in history
+        if p["category"] == expense["category"] and p["id"] != expense["id"]
+    ]
+    if len(same_category) < min_samples:
+        return None
+    median = statistics.median(same_category)
+    if median <= 0 or amount < median * ratio:
+        return None
+    return {
+        "code": "amount_outlier",
+        "detail": f"{expense['category']}の過去{len(same_category)}件の中央値は{median:,.0f}円。"
+        f"この申請は{amount:,}円で{amount / median:.1f}倍にあたる",
+    }
 
 
 # ---------------------------------------------------------------- 検算

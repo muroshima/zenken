@@ -1257,9 +1257,7 @@
     "attendees": 4,
     "description": "キックオフの打ち合わせ（4名）",
     "receipt_text": "キッチン オリーブ\n2026/09/06\n合計 ¥2,370\n",
-    "expected_findings": [
-      "duplicate"
-    ]
+    "expected_findings": []
   },
   {
     "id": "EXP-0110",
@@ -1334,9 +1332,7 @@
     "attendees": 2,
     "description": "要件のすり合わせ（2名）",
     "receipt_text": "焼鳥 とりの助\n2026/09/01\n合計 ¥9,844\n",
-    "expected_findings": [
-      "vendor_alias_duplicate"
-    ]
+    "expected_findings": []
   },
   {
     "id": "EXP-0022",
@@ -1936,9 +1932,7 @@
     "attendees": 3,
     "description": "キックオフの打ち合わせ（3名）",
     "receipt_text": "キッチン オリーブ\n2026/09/09\n合計 ¥2,001\n",
-    "expected_findings": [
-      "vendor_alias_duplicate"
-    ]
+    "expected_findings": []
   },
   {
     "id": "EXP-0155",
@@ -2165,9 +2159,7 @@
     "attendees": 4,
     "description": "課題整理のための打ち合わせ（4名）",
     "receipt_text": "カフェ ルミエール\n2026/09/15\n合計 ¥1,211\n",
-    "expected_findings": [
-      "vendor_alias_duplicate"
-    ]
+    "expected_findings": []
   },
   {
     "id": "EXP-0035",
@@ -2384,9 +2376,7 @@
     "attendees": 1,
     "description": "業務で使用",
     "receipt_text": "紀伊國屋書店\n2026/09/15\n合計 ¥2,322\n",
-    "expected_findings": [
-      "duplicate"
-    ]
+    "expected_findings": []
   },
   {
     "id": "EXP-0105",
@@ -2637,9 +2627,7 @@
     "attendees": 3,
     "description": "キックオフの打ち合わせ（3名）",
     "receipt_text": "キッチン オリーブ\n2026/09/17\n合計 ¥1,509\n",
-    "expected_findings": [
-      "duplicate"
-    ]
+    "expected_findings": []
   },
   {
     "id": "EXP-0104",

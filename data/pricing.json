@@ -1,0 +1,10 @@
+{
+  "_comment": "モデルの単価（1Mトークンあたりのドル）。OrcaRouter はトークンの上乗せをしないため、上流の提供元と同額になる。",
+  "_measured_at": "2026-09-19",
+  "_verify": "実際の請求は OrcaRouter コンソールの Request Logs で確認できる。ここの値はコスト比較の計算に使う公表単価。",
+  "models": {
+    "anthropic/claude-sonnet-5": {"input_per_1m": 3.0, "output_per_1m": 15.0},
+    "anthropic/claude-haiku-4.5": {"input_per_1m": 1.0, "output_per_1m": 5.0},
+    "google/gemini-3.5-flash": {"input_per_1m": 0.3, "output_per_1m": 2.5}
+  }
+}
