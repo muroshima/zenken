@@ -64,6 +64,28 @@ class TestMaskPii:
         # 金額は判断に必要なので落としてはいけない
         assert "12,000" in mask_pii("合計 ¥12,000")
 
+    def test_カード番号の下4桁を残さない(self):
+        """電話番号のパターンを先に当てると、前半だけ食われて下4桁が残る。"""
+        masked = mask_pii("カードは 4111-1111-1111-1111 です")
+        assert "1111" not in masked, f"下4桁が残っている: {masked}"
+        assert "[カード番号]" in masked
+
+    def test_複数のPIIが混ざっていてもすべて落とす(self):
+        masked = mask_pii(
+            "連絡先 taro@example.com / 電話 090-1234-5678 / カード 4111-1111-1111-1111"
+        )
+        for leaked in ("taro@example.com", "090-1234-5678", "4111"):
+            assert leaked not in masked, f"{leaked} が残っている: {masked}"
+
+    def test_日本の固定電話も落とす(self):
+        assert "03-1234-5678" not in mask_pii("担当 03-1234-5678 まで")
+
+    def test_それぞれ正しい種別でラベルされる(self):
+        """順序を間違えると、電話番号が郵便番号として食われてラベルがずれる。"""
+        assert mask_pii("電話 090-1234-5678") == "電話 [電話番号]"
+        assert mask_pii("〒150-0001") == "[郵便番号]"
+        assert mask_pii("カード 4111-1111-1111-1111") == "カード [カード番号]"
+
 
 class TestNeutralize:
     def test_指示文を伏せたうえで痕跡を残す(self):

@@ -64,6 +64,11 @@ MODEL_STRONG = os.environ.get("ZENKEN_MODEL_STRONG", FREE_MODEL)
 # これを超えたら、引っかかるものが無くても一応モデルに見せる
 REVIEW_AMOUNT_THRESHOLD = int(os.environ.get("ZENKEN_REVIEW_THRESHOLD", "50000"))
 
+# 出力に許す上限。推論するモデルは答えを書く前に大量のトークンを使う。
+# gpt-5 に振られたとき、761 トークンのうち 704 が推論だった（実測）。
+# 上限が足りないと JSON が途中で切れ、パースに失敗して人に回ることになる。
+MAX_TOKENS = {"cheap": 900, "strong": 2500}
+
 # ルーティングを無効にして全件を同じ階層で処理する。コストの比較対象を取るために使う。
 # 通常の実行では空のままにする。
 FORCE_TIER = os.environ.get("ZENKEN_FORCE_TIER", "").strip()
@@ -365,7 +370,7 @@ class AuditAgent:
                     {"role": "user", "content": prompt},
                 ],
                 model=model,
-                max_tokens=900,
+                max_tokens=MAX_TOKENS.get(tier, 900),
             )
             parsed = _extract_json(res["content"])
             # 根拠を書けていない指摘は採用しない。
